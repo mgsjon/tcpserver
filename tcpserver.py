@@ -3,7 +3,8 @@
 import argparse
 import socket
 from handlers import square
-
+from collections import Counter
+from threading import Thread
 
 config = {
     "host": "0.0.0.0",
@@ -13,6 +14,8 @@ config = {
     "verbose": False,
     "handler": square
 }
+
+cnt = Counter()
 
 
 def set_config():
@@ -30,6 +33,35 @@ def verbose(msg):
     if config["verbose"]:
         print(msg)
 
+
+class ClientThread(Thread):
+
+    def __init__(self, socket, addr):
+        super(ClientThread, self).__init__()
+        cnt['conn'] += 1
+        self.ip = addr[0]
+        self.port = addr[1]
+        self.socket = socket
+        verbose("Connected: %s:%s" % addr)
+
+    def run(self):
+
+        self.socket.settimeout(config["timeout"])
+        self.socket.send("Hi! Send you request or 'close' to close connection.\r\n")
+
+        while True:
+            try:
+                data = self.socket.recv(config["buffer"])
+                cnt['req'] += 1  # Let's count 'close' requests too
+                if not data or data.rstrip() == "close":
+                    break
+                self.socket.send(square(data))
+            except socket.timeout:
+                self.socket.send("I have to close the connection due to timeout. Sorry!\r\n")
+                break
+
+        self.socket.send("Bye-bye!\r\n")
+        self.socket.close()
 
 if __name__ == "__main__":
 
@@ -49,21 +81,7 @@ if __name__ == "__main__":
     while True:
 
         client_socket, addr = tcp_socket.accept()
-        verbose("Connected: %s:%s" % addr)
-        client_socket.settimeout(config["timeout"])
-        client_socket.send("Hi! Send you request or 'close' to close connection.\r\n")
+        client_thread = ClientThread(client_socket, addr)
+        client_thread.start()
 
-        while True:
-            try:
-                data = client_socket.recv(config["buffer"])
-                if not data or data.rstrip() == "close":
-                    break
-                client_socket.send(square(data))
-            except socket.timeout:
-                client_socket.send("I have to close the connection due to timeout. Sorry!\r\n")
-                break
-
-        client_socket.send("Bye-bye!\r\n")
-        client_socket.close()
-
-    verbose("Server stopped")
+    #verbose("Server stopped")
