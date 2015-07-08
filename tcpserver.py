@@ -59,17 +59,16 @@ class ClientThread(Thread):
                 data = self.socket.recv(config["buffer"])
                 cnt["req"] += 1  # Count 'close' requests too
                 if not data or data.rstrip() == "close":
-                    cnt["conn_time"] += time() - connection_start
                     break
                 self.socket.send(square(data))
                 verbose("Response to %s:%s" % (self.ip, self.port))
             except socket.timeout:
                 cnt["to"] += 1
-                cnt["conn_time"] += time() - connection_start
                 self.socket.send("I have to close the connection due to timeout. Sorry!\n")
                 verbose("Connection timeout on %s:%s" % (self.ip, self.port))
                 break
 
+        cnt["conn_time"] += (time() - connection_start)
         self.socket.send("Bye-bye!\n")
         self.socket.close()
 
