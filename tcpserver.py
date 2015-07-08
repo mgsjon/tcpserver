@@ -11,7 +11,7 @@ config = {
     "host": "0.0.0.0",
     "port": 9999,
     "buffer": 4096,
-    "timeout": 15,
+    "timeout": 3,
     "verbose": False,
     "handler": square
 }
@@ -41,11 +41,10 @@ class ClientThread(Thread):
     def __init__(self, socket, addr, server_thread):
         super(ClientThread, self).__init__()
         cnt["conn"] += 1
-        self.ip = addr[0]
-        self.port = addr[1]
+        self.addr = addr
         self.socket = socket
         self._server_thread = server_thread
-        self.daemon = True
+        self._dead = False
         verbose("Connected: %s:%s" % addr)
 
     def run(self):
@@ -56,20 +55,39 @@ class ClientThread(Thread):
 
         while not self._server_thread.stopped:
             try:
+
+                # Wait for input data from the socket
                 data = self.socket.recv(config["buffer"])
-                cnt["req"] += 1  # Count 'close' requests too
+
+                # Start processing client's request
+                verbose("Request from %s:%s -> %s" % (self.addr + (data, )))
+                cnt["req"] += 1
+
                 if not data or data.rstrip() == "close":
+                    verbose("Connection closed by request from %s:%s" % self.addr)
                     break
-                self.socket.send(square(data))
-                verbose("Response to %s:%s" % (self.ip, self.port))
+
+                # Call request handler
+                response = square(data)
+
+                # Send the response
+                self.socket.send(response)
+                verbose("Response to %s:%s -> %s" % (self.addr + (response, )))
+
             except socket.timeout:
                 cnt["to"] += 1
                 self.socket.send("I have to close the connection due to timeout. Sorry!\n")
-                verbose("Connection timeout on %s:%s" % (self.ip, self.port))
+                verbose("Connection timeout on %s:%s" % self.addr)
                 break
+            except socket.error:
+                self._dead = True
+                verbose("Connection interrupted by %s:%s" % self.addr)
 
         cnt["conn_time"] += (time() - connection_start)
-        self.socket.send("Bye-bye!\n")
+
+        # Don't send anything to broken pipe
+        if not self._dead:
+            self.socket.send("Bye-bye!\n")
         self.socket.close()
 
 
@@ -89,10 +107,16 @@ class ServerThread(Thread):
 
     def run(self):
         while True:
-            client_socket, addr = tcp_socket.accept()
-            cnt["threads"] += 1
-            client_thread = ClientThread(client_socket, addr, self)
-            client_thread.start()
+            try:
+                client_socket, addr = tcp_socket.accept()
+                cnt["threads"] += 1
+                client_thread = ClientThread(client_socket, addr, self)
+                client_thread.start()
+            except socket.error, e:
+                if e[0] == 24:
+                    verbose("[!] Too many requests. Rejected request from %s:%s\n" % addr)
+                else:
+                    verbose("[!] Rejected request from %s:%s" % addr)
 
 
 if __name__ == "__main__":
@@ -108,14 +132,18 @@ if __name__ == "__main__":
 
     server_start_time = time()
 
-    print("Server started on %s:%s. Press 'Ctrl+C' whenever you want to stop it.\n" % (config["host"], config["port"]))
+    print("Server started on %s:%s. Buffer size: %s bytes. Timeout: %s s. Verbose: %s" %
+          (config["host"], config["port"], config["buffer"], config["timeout"], config["verbose"]))
+    print("Press 'Ctrl+C' whenever you want to stop the server.\n")
 
+    # Start sever thread
     server_thread = ServerThread()
     cnt["threads"] += 1
     server_thread.start()
 
     while True:
         try:
+            # Wait for Ctrl+C to stop server
             exit_signal = raw_input("")
         except KeyboardInterrupt:
             server_thread.stop()
@@ -140,6 +168,7 @@ if __name__ == "__main__":
         Avg. requests per connection: %s
         Avg. connection time: %s
         Timeouts: %s
-    """ % (total_time, cnt["conn"], cnt["req"], req_per_conn, conn_time, cnt["to"])
+        Threads: %s
+    """ % (total_time, cnt["conn"], cnt["req"], req_per_conn, conn_time, cnt["to"], cnt["threads"])
 
     print(stats)
