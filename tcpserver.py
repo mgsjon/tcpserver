@@ -11,7 +11,7 @@ config = {
     "host": "0.0.0.0",
     "port": 9999,
     "buffer": 4096,
-    "timeout": 5,
+    "timeout": 15,
     "verbose": False,
     "handler": square
 }
@@ -62,10 +62,12 @@ class ClientThread(Thread):
                     cnt["conn_time"] += time() - connection_start
                     break
                 self.socket.send(square(data))
+                verbose("Response to %s:%s" % (self.ip, self.port))
             except socket.timeout:
                 cnt["to"] += 1
                 cnt["conn_time"] += time() - connection_start
                 self.socket.send("I have to close the connection due to timeout. Sorry!\n")
+                verbose("Connection timeout on %s:%s" % (self.ip, self.port))
                 break
 
         self.socket.send("Bye-bye!\n")
@@ -107,21 +109,22 @@ if __name__ == "__main__":
 
     server_start_time = time()
 
-    verbose("Server started. Type 'stop' whenever you want to stop it.\n")
+    print("Server started on %s:%s. Press 'Ctrl+C' whenever you want to stop it.\n" % (config["host"], config["port"]))
 
     server_thread = ServerThread()
     cnt["threads"] += 1
     server_thread.start()
 
     while True:
-        exit_signal = raw_input("")
-        if exit_signal == "stop":
+        try:
+            exit_signal = raw_input("")
+        except KeyboardInterrupt:
             server_thread.stop()
             break
 
     server_end_time = time()
 
-    verbose("Server stopped")
+    print("\nServer stopped")
 
     if cnt["conn"]:
         req_per_conn = "%.4s" % (cnt["req"] / float(cnt["conn"]))
