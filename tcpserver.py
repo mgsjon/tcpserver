@@ -50,7 +50,6 @@ class ClientThread(Thread):
     def run(self):
 
         self.socket.settimeout(config["timeout"])
-        self.socket.send("Hi! Send you request or 'close' to close connection.\n")
         connection_start = time()
 
         while not self._server_thread.stopped:
@@ -76,7 +75,6 @@ class ClientThread(Thread):
 
             except socket.timeout:
                 cnt["to"] += 1
-                self.socket.send("I have to close the connection due to timeout. Sorry!\n")
                 verbose("Connection timeout on %s:%s" % self.addr)
                 break
             except socket.error:
@@ -85,9 +83,6 @@ class ClientThread(Thread):
 
         cnt["conn_time"] += (time() - connection_start)
 
-        # Don't send anything to broken pipe
-        if not self._dead:
-            self.socket.send("Bye-bye!\n")
         self.socket.close()
 
 
