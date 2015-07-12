@@ -4,7 +4,7 @@ import argparse
 import socket
 from handlers import square
 from collections import Counter
-from threading import Thread, Event
+from threading import Thread, Event, active_count
 from time import time
 
 config = {
@@ -45,6 +45,7 @@ class ClientThread(Thread):
         self.socket = socket
         self._server_thread = server_thread
         self._dead = False
+        self.daemon = True
         verbose("Connected: %s:%s" % addr)
 
     def run(self):
@@ -75,9 +76,11 @@ class ClientThread(Thread):
 
             except socket.timeout:
                 cnt["to"] += 1
-                verbose("Connection timeout on %s:%s" % self.addr)
+                verbose("Connection closed due to timeout timeout on %s:%s" % self.addr)
                 break
-            except socket.error:
+            except socket.error, e:
+                if e[0] == 35:
+                    continue
                 self._dead = True
                 verbose("Connection interrupted by %s:%s" % self.addr)
 
@@ -92,6 +95,7 @@ class ServerThread(Thread):
         super(ServerThread, self).__init__()
         self._stop = Event()
         self.daemon = True
+        self.rejected = {}
 
     @property
     def stopped(self):
@@ -104,14 +108,26 @@ class ServerThread(Thread):
         while True:
             try:
                 client_socket, addr = tcp_socket.accept()
+                if addr in self.rejected:
+                    del self.rejected[addr]
+            except socket.error, e:
+                addr_str = "%s:%s" % addr
+                if addr not in self.rejected:
+                    if e[0] == 24:
+                        verbose("[!] Too many connections (%s+) at a time. Suspended connection request from %s\n" %
+                                (active_count() - 1, addr_str))
+                    else:
+                        verbose("[!] Suspended connection request from %s\n" % addr_str)
+                    self.rejected[addr] = True
+                continue
+
+            try:
                 cnt["threads"] += 1
                 client_thread = ClientThread(client_socket, addr, self)
                 client_thread.start()
-            except socket.error, e:
-                if e[0] == 24:
-                    verbose("[!] Too many requests. Rejected request from %s:%s\n" % addr)
-                else:
-                    verbose("[!] Rejected request from %s:%s" % addr)
+            except Exception, e:
+                verbose("[!] Couldn't run thread for connection request from %s: %s\n" % (addr + (e, )))
+
 
 
 if __name__ == "__main__":
@@ -127,7 +143,7 @@ if __name__ == "__main__":
 
     server_start_time = time()
 
-    print("Server started on %s:%s. Buffer size: %s bytes. Timeout: %s s. Verbose: %s" %
+    print("Server started on %s:%s. Buffer size: %s bytes. Timeout: %s s. Verbose: %s." %
           (config["host"], config["port"], config["buffer"], config["timeout"], config["verbose"]))
     print("Press 'Ctrl+C' whenever you want to stop the server.\n")
 
@@ -146,7 +162,7 @@ if __name__ == "__main__":
 
     server_end_time = time()
 
-    print("\nServer stopped")
+    print("Server stopped\n")
 
     if cnt["conn"]:
         req_per_conn = "%.4s" % (cnt["req"] / float(cnt["conn"]))
