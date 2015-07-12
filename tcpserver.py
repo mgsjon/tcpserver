@@ -7,6 +7,7 @@ from collections import Counter
 from threading import Thread, Event, active_count
 from time import time
 
+
 config = {
     "host": "0.0.0.0",
     "port": 9999,
@@ -68,7 +69,7 @@ class ClientThread(Thread):
                     break
 
                 # Call request handler
-                response = square(data)
+                response = config['handler'](data)
 
                 # Send the response
                 self.socket.send(response)
@@ -76,9 +77,9 @@ class ClientThread(Thread):
 
             except socket.timeout:
                 cnt["to"] += 1
-                verbose("Connection closed due to timeout timeout on %s:%s" % self.addr)
+                verbose("Connection closed due to a timeout on %s:%s" % self.addr)
                 break
-            except socket.error, e:
+            except socket.error as e:
                 if e[0] == 35:
                     continue
                 self._dead = True
@@ -110,7 +111,7 @@ class ServerThread(Thread):
                 client_socket, addr = tcp_socket.accept()
                 if addr in self.rejected:
                     del self.rejected[addr]
-            except socket.error, e:
+            except socket.error as e:
                 addr_str = "%s:%s" % addr
                 if addr not in self.rejected:
                     if e[0] == 24:
@@ -125,9 +126,8 @@ class ServerThread(Thread):
                 cnt["threads"] += 1
                 client_thread = ClientThread(client_socket, addr, self)
                 client_thread.start()
-            except Exception, e:
+            except Exception as e:
                 verbose("[!] Couldn't run thread for connection request from %s: %s\n" % (addr + (e, )))
-
 
 
 if __name__ == "__main__":
